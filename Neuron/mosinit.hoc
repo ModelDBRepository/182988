@@ -1,0 +1,202 @@
+load_file("nrngui.hoc")
+
+create soma
+access soma
+L=30
+diam=30
+
+insert pas
+insert sdsr
+insert dr
+insert trpm8
+insert OU
+ek=-90
+tr_dr=1.5
+
+tstop = 10000
+
+objref param_mtx, param_file, par_indx
+param_mtx = new Matrix()
+param_file = new File()
+param_file.ropen("data/parameters.txt")
+param_mtx.scanf(param_file,20,11)
+param_file.close()
+
+par_indx=new Vector()
+par_indx.append(7,28,54,92,103,134,157,158,168,185,212,215,227,272,275,289,293,311,323,339)
+
+proc setpar() {
+    gm8_trpm8=param_mtx.x[$1][0]
+    g_pas=param_mtx.x[$1][1]
+	tauca_trpm8=param_mtx.x[$1][2]    
+	taudv_trpm8=param_mtx.x[$1][3]
+	p_ca_trpm8=param_mtx.x[$1][4]
+	gsd_sdsr=param_mtx.x[$1][5]
+	gsr_sdsr=param_mtx.x[$1][6]
+	gd_dr=param_mtx.x[$1][7]
+	gr_dr=param_mtx.x[$1][8]
+    DVmin_trpm8=param_mtx.x[$1][9]
+    DVmax_trpm8=param_mtx.x[$1][10]
+    curr_par=par_indx.x[$1]
+}
+
+setpar(6)
+
+
+//termperature traces
+objref tempfile, celsiusvec[2], Mtx, tvec[2]
+for i=0,1 {
+    celsiusvec[i]=new Vector()
+    tvec[i]=new Vector()
+}
+
+tempfile= new File()
+Mtx=new Matrix()
+
+tempfile.ropen("data/short_pulses.txt")
+Mtx.scanf(tempfile)
+tvec[0]=Mtx.getcol(0)
+tvec[0].mul(1000)
+celsiusvec[0]=Mtx.getcol(1)
+tempfile.close
+
+tempfile.ropen("data/temp_steps.txt")
+Mtx.scanf(tempfile)
+tvec[1]=Mtx.getcol(0)
+tvec[1].mul(1000)
+celsiusvec[1]=Mtx.getcol(1)
+tempfile.close
+
+proc set_temp(){
+    for i=0,1 {celsiusvec[i].play_remove()}
+    tstop=tvec[$1].x[tvec[$1].size()-1]
+    celsiusvec[$1].play(&celsius,tvec[$1],1)
+    tstop_changed()
+}
+set_temp(0)
+
+// ISI and frequency plots
+objref apc, apvec, isivec, isiplot, freqplot, box2
+box2=new VBox()
+box2.intercept(1)
+    isiplot=new Graph()
+    isiplot.size(0,tstop,0,1000)
+    isiplot.label(0.1,0.85,"ISIs (ms)") 
+    graphList[0].append(isiplot)
+
+    freqplot=new Graph()
+    freqplot.size(0,tstop,0,60)
+    freqplot.label(0.1,0.85,"firing rate (/s)") 
+    graphList[0].append(freqplot)
+box2.intercept(0)
+box2.map("",25,150,600,600)
+
+//AP recording and ISI plotting
+apvec=new Vector()
+isivec=new Vector()
+
+last_time=0
+freq_time=0
+curr_freq=0
+
+proc apeval(){
+	apvec.append(t)
+	isivec.append(t-last_time)
+	isiplot.mark(t, t - last_time,"O",4)
+	last_time=t
+	
+	if (int(t/1000)>freq_time){
+		freqplot.mark(freq_time*1000, curr_freq, "O", 5)
+		freq_time = int(t/1000)
+		curr_freq=0
+	} 
+	curr_freq += 1
+}
+
+objref nc1, null
+nc1 = new NetCon(&v(0.5),null)
+nc1.threshold = -30
+nc1.record("apeval()")
+
+
+//Main Window
+
+objref box1,tgraph, sgraph, agraph
+box1 = new VBox()
+box1.intercept(1)
+
+	agraph = new Graph()
+	agraph.size(0,tstop,-90,40)
+	agraph.addexpr("soma.v( 0.5 )", 1, 1)
+	agraph.addexpr("celsius", 3, 1)
+    graphList[0].append(agraph)
+
+	xpanel("",1)
+		xbutton("Run!","doic()")
+		xbutton("Stop","stoprun=1")
+		xfixedvalue("temp","celsius")
+		xfixedvalue("Time","t")
+	xpanel()
+	xpanel("",1)
+        xbutton("SecParams","forall {nrnsecmenu(-1,1)}")
+        xmenu("Parameters")
+//            xbutton("7","setpar(0)")                                                                                                        
+//            xbutton("28","setpar(1)")
+//            xbutton("54","setpar(2)")
+            xbutton("92","setpar(3)")
+//            xbutton("103","setpar(4)")
+//            xbutton("134","setpar(5)")
+            xbutton("157","setpar(6)")
+//            xbutton("158","setpar(7)")
+            xbutton("168","setpar(8)")
+            xbutton("185","setpar(9)")
+//            xbutton("212","setpar(10)")
+//            xbutton("215","setpar(11)")
+            xbutton("227","setpar(12)")
+//            xbutton("272","setpar(13)")
+//            xbutton("275","setpar(14)")
+//            xbutton("289","setpar(15)")
+//            xbutton("293","setpar(16)")
+//            xbutton("311","setpar(17)")
+//            xbutton("323","setpar(18)")
+//            xbutton("339","setpar(19)")
+        xmenu()
+        xmenu("Protocol",1)
+            xbutton("Cold/hot pulses","set_temp(0)")
+            xbutton("Cold pulse + steps","set_temp(1)")
+        xmenu()
+        xfixedvalue("Params","curr_par")
+		
+	xpanel()
+box1.intercept(0)
+box1.map("",100,50,600,400)
+
+// Run procedure
+
+proc doic() {
+	apvec.resize(0)
+	isivec.resize(0)
+	
+    agraph.erase()
+	isiplot.erase()
+	freqplot.erase()
+	
+	last_time=0
+	freq_time=0
+	curr_freq=0
+
+	running_ = 1
+	stdinit()
+	
+    // The first 30 s of simulation will have a faster M8 adaptation dynamics
+	accel_trpm8=50	
+    continuerun(30000)
+    //Then, continue normally
+    accel_trpm8=1
+    continuerun(tstop)
+}
+
+
+
+
+
